@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-consulting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-consulting}
+      POSTGRES_DB: ${POSTGRES_DB:-consulting}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-consulting}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-consulting}:${POSTGRES_PASSWORD:-consulting}@db:5432/${POSTGRES_DB:-consulting}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 60
+      JWT_REFRESH_EXPIRE_DAYS: 7
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8898}
+      ALLOW_SEED: "false"
+      RATE_LIMIT_PER_MINUTE: "120"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      UPLOAD_DIR: /app/uploads
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - uploads:/app/uploads
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api/v1}
+    ports:
+      - "8898:8898"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0 --port 8898
+
+volumes:
+  pgdata:
+  uploads:

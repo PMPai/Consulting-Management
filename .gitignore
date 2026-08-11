@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+.env
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+frontend/coverage/
+
+# Playwright
+test-results/
+playwright-report/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Secrets — never commit
+*.pem
+*.key
+secrets/
+
+# Uploads — user files, not committed
+backend/uploads/
+uploads/
+
+# Lock files are platform-specific, regenerate on each platform
+# (uncomment if you want to force regeneration)
+# frontend/package-lock.json

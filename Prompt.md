@@ -1,6 +1,6 @@
 ## ROLE
 
-You are a senior cross-functional product engineering team responsible for converting an approved interactive prototype into a production-ready consulting project management application.
+You are a senior cross-functional product engineering team responsible for building a production-ready consulting project management application from the approved design assets.
 
 Act simultaneously as:
 
@@ -13,7 +13,7 @@ Act simultaneously as:
 
 The product is named “顾问项目 ROI 管理台” and is branded for 精铭数据 / PrecisionData.
 
-Build the application rather than merely describing it. Preserve the approved design and interaction decisions, but replace all prototype-only behavior and hard-coded data with validated, secure, persistent production functionality.
+Build the application rather than merely describing it. Replace all placeholder behavior and hard-coded data with validated, secure, persistent production functionality.
 
 Think in terms of traceability:
 
@@ -25,12 +25,12 @@ Every displayed number must be traceable to stored source records and a document
 
 ### 1. Development approach
 
-Inspect the existing prototype and repository before changing anything.
+Inspect the existing repository and design assets before changing anything.
 
 Then:
 
 1. Document the current structure and reusable components.
-2. Identify prototype-only state, hard-coded data, inactive controls, and missing backend operations.
+2. Identify placeholder state, hard-coded data, inactive controls, and missing backend operations.
 3. Produce a concise implementation plan.
 4. Implement the complete system.
 5. Run database migrations, tests, type checks, production builds, and API tests.
@@ -38,6 +38,31 @@ Then:
 7. Do not stop after producing a plan or interface mockup.
 
 Preserve unrelated existing files and user changes.
+
+### 1.1 Finalized project decisions
+
+The following decisions are binding for the entire project:
+
+| # | Decision | Impact |
+|---|----------|--------|
+| D1 | No external prototype. Design reference = committed assets only (`precisiondata-logo.png`, `dashboard-reference.jpg` in `/assets/`) | No live-site dependency |
+| D2 | Single currency, org-level. No exchange-rate fields anywhere | Drop all multi-currency fields and `ExchangeRate` entity |
+| D3 | Role-level rates (org → role → internalCostRate + clientBillingRate). Time entries snapshot current role rate | No per-project rate fields |
+| D4 | ROI is project-lifetime (ignores dashboard date selector); the investment-vs-benefit bar chart honors the date selector | KPI tooltip explains lifetime scope |
+| D5 | Section 15 canonical base schema on every business entity | `id, organizationId, createdAt, updatedAt, deletedAt, createdBy, updatedBy, version` via shared mixin |
+| D6 | Roles: Owner / Assistant (full access) / Consultant (org-wide read+write) / Viewer (org-wide read-only) | No assignment table; all org members see all org projects |
+| D7 | API keys are kept; webhooks are removed entirely | No webhook models, routes, migrations, or UI |
+| D8 | Minimal consultant revenue (amount + status) + profitability in reports only, not dashboard | RevenueEntry entity retained |
+| D9 | Frontend served on port 8898; no domain name required | CORS allowlist uses `http://localhost:8898` |
+| D10 | The application must not depend on any LLM model | No AI/LLM integration in the codebase |
+| D11 | Frontend production build must use chunk splitting | `react-vendor`, `query-vendor`, `chart-vendor`, `form-vendor` |
+| D12 | Playwright E2E tests are required | Covers auth, navigation, dashboard, projects, API verification |
+| D13 | Assistant role added with full permissions (same as Owner) | 4 roles: owner, assistant, consultant, viewer |
+| D14 | Project model enhanced: total_quote, final_goal, notes fields | Profit = total_quote - labor_cost - expenses |
+| D15 | Phase model enhanced: kpi_definition, milestone_goal, estimated_expense | Compare estimated vs actual per phase |
+| D16 | File upload support: contracts, agreements, attachments | `project_files` table + upload/download/delete endpoints |
+| D17 | Cross-platform Docker app — must run on Windows and Mac | No Windows-specific paths, ASCII filenames, `pathlib.Path` for all file ops |
+| D18 | Engineering-grade design system: Linear/Vercel/Stripe-style | Design tokens (CSS variables), 5-level gray scale, tabular-nums, SVG icons, no emoji |
 
 ### 2. Product scope
 
@@ -54,12 +79,14 @@ Create a responsive web application for independent consultants and small consul
 - Client benefits.
 - Client ROI.
 - Reports.
-- External API integrations.
-- API keys, webhooks, roles, and audit history.
+- External API integrations via API keys.
+- API keys, roles, and audit history.
 
 The application must support multiple clients and projects.
 
 Use organization-level data separation from the beginning, even if the first deployment initially contains one organization.
+
+The application uses a single org-level currency. No multi-currency or exchange-rate support.
 
 ### 3. Global navigation and layout
 
@@ -94,7 +121,9 @@ Menu order:
 7. API 与集成
 8. 设置
 
-Use the supplied PrecisionData logo in the sidebar. Preserve the logo’s original dark navy appearance. Display it on a warm-white brand plate so it remains legible against the dark sidebar. Do not recolor, distort, crop incorrectly, or recreate the logo.
+Use the supplied PrecisionData logo in the sidebar. Preserve the logo's original dark navy appearance. Display it on a warm-white brand plate so it remains legible against the dark sidebar. Do not recolor, distort, crop incorrectly, or recreate the logo.
+
+The frontend is served on port 8898. No domain name is required — the application is accessed via `http://localhost:8898`. The backend API is on port 8000.
 
 ### 4. Dashboard
 
@@ -129,8 +158,8 @@ Gantt chart requirements:
 
 The approved Dashboard KPI area contains exactly these items:
 
-- Client ROI, displayed as a circular percentage chart and positioned first.
-- Project completion, displayed as a circular percentage chart.
+- Client ROI, displayed as a circular percentage chart and positioned first. The ROI KPI is project-lifetime and ignores the dashboard date-range selector. A tooltip explains this.
+- Project completion, displayed as a circular chart.
 - Consultant input cost.
 - Verified client benefits.
 
@@ -360,7 +389,8 @@ Calculations:
 
 - Labor cost = duration in hours × saved internal cost-rate snapshot.
 - Billable amount = billable duration in hours × saved billing-rate snapshot.
-- Changing a project’s current rate must not rewrite historical time-entry snapshots.
+- Rates are role-level (org → role → internalCostRate + clientBillingRate), defined in a `role_rates` table. Time entries snapshot the user's current role rate at entry time.
+- Changing a role's current rate must not rewrite historical time-entry snapshots.
 
 ### 9. Tool and direct expenses
 
@@ -373,16 +403,9 @@ Expense fields:
 - Expense or tool name.
 - Category.
 - Supplier.
-- Original amount.
-- Original currency.
-- Project-currency amount.
-- Exchange rate.
-- Exchange-rate date.
+- Amount (single org-level currency).
 - Billable-to-client flag.
-- Charged-to-client flag.
-- Reimbursement status.
 - Notes.
-- Receipt metadata.
 - Source.
 - Created, updated, and deleted timestamps.
 - Record version.
@@ -403,11 +426,7 @@ Rules:
 - Every expense must belong to a project.
 - A phase is optional.
 - Amounts cannot be negative.
-- If currencies differ, the exchange rate and rate date are required.
-- Do not invent exchange rates.
-- Records missing exchange-rate information may be saved as incomplete but must not enter official financial totals.
-- Clearly distinguish consultant-paid and client-pass-through expenses.
-- Historical exchange-rate snapshots must remain unchanged.
+- Clearly distinguish consultant-paid and client-pass-through expenses via the billable-to-client flag.
 
 ### 10. Consultant revenue
 
@@ -444,13 +463,9 @@ Client-investment fields:
 - Optional phase ID.
 - Date.
 - Investment type.
-- Amount.
-- Currency.
-- Project-currency amount.
-- Exchange rate and rate date.
+- Amount (single org-level currency).
 - Description.
-- Evidence.
-- Confirmation status.
+- Confirmation status (estimated or confirmed).
 - Created, updated, and deleted timestamps.
 
 Investment types:
@@ -469,18 +484,10 @@ Client-benefit fields:
 - Optional phase ID.
 - Benefit name.
 - Benefit type.
-- Observation start and end dates.
-- Amount.
-- Currency.
-- Project-currency amount.
-- One-time or recurring.
-- Calculation method.
-- Baseline description.
-- Data source.
-- Evidence link.
+- Observation date.
+- Amount (single org-level currency).
+- Status: estimated or verified.
 - Notes.
-- Confidence: high, medium, or low.
-- Status: estimated, pending verification, verified, or rejected.
 - Verified by.
 - Verified timestamp.
 - Created, updated, and deleted timestamps.
@@ -496,9 +503,10 @@ Benefit types:
 
 ROI formulas:
 
-- Official verified benefit = verified benefits within the selected date range.
-- Estimated or pending benefits must not enter official ROI.
-- Client investment = confirmed consulting fees + confirmed client internal investment + confirmed client tools and implementation costs.
+- ROI is project-lifetime scoped, not date-range scoped. The dashboard date selector affects only the investment-vs-benefit chart, not the ROI KPI.
+- Official verified benefit = all verified benefits on the project.
+- Estimated benefits must not enter official ROI.
+- Client investment = all confirmed investments on the project.
 - Client net benefit = verified benefit − client investment.
 - Client ROI = client net benefit ÷ client investment × 100%.
 
@@ -556,7 +564,6 @@ Provide CRUD operations for:
 - client-investments
 - benefit-entries
 - API keys
-- webhook subscriptions
 - audit logs, read-only
 
 Standard operations:
@@ -646,32 +653,7 @@ API operational requirements:
 - Consistent 4xx and 5xx errors.
 - No stack traces returned to clients.
 - Audit logging for all write operations.
-- Postman or Bruno collection.
 - External CRUD examples.
-
-Webhook events:
-
-- `project.created`
-- `project.updated`
-- `project.deleted`
-- `phase.updated`
-- `time_entry.created`
-- `time_entry.updated`
-- `tool_expense.created`
-- `benefit_entry.created`
-- `benefit_entry.verified`
-- `client_investment.updated`
-
-Webhooks must use:
-
-- HMAC signatures.
-- Unique event IDs.
-- Delivery logs.
-- Exponential retry with a maximum attempt count.
-- Duplicate-delivery documentation.
-- Secret rotation.
-- Disabled status after repeated permanent failures.
-- No delivery of fields outside the subscriber’s authorized organization.
 
 ### 14. Authentication and permissions
 
@@ -685,12 +667,12 @@ Owner:
 
 Consultant:
 
-- Manage authorized clients, projects, time records, expenses, and benefit records.
+- Read and write access to all clients, projects, time records, expenses, and benefit records within the organization.
 - Cannot manage organization ownership or unrestricted API keys.
 
 Viewer:
 
-- Read-only access within assigned scope.
+- Read-only access to all data within the organization.
 - No write, delete, restore, or API-key actions.
 
 Enforce permissions on the server. Hiding buttons is not sufficient security.
@@ -723,14 +705,13 @@ Audit events must record:
 - Before-and-after summaries.
 - Failure status when relevant.
 
-Sensitive values such as passwords, tokens, API-key secrets, and webhook secrets must never appear in audit logs.
+Sensitive values such as passwords, tokens, and API-key secrets must never appear in audit logs.
 
 ### 16. Data completeness
 
 Return explicit states such as:
 
 - `COMPLETE`
-- `MISSING_EXCHANGE_RATE`
 - `MISSING_CLIENT_INVESTMENT`
 - `NO_VERIFIED_BENEFITS`
 - `MISSING_REVENUE`
@@ -758,7 +739,7 @@ Implement the following safeguards:
 - Avoid partial writes.
 - Store timestamps in UTC.
 - Display timestamps in the user’s selected time zone.
-- Preserve historical rates and exchange-rate snapshots.
+- Preserve historical rate snapshots (role-level cost/billing rates snapshotted at time-entry creation).
 - Return `null` for undefined financial ratios.
 - Make retries safe.
 - Handle lost network connections gracefully.
@@ -808,10 +789,12 @@ Engineering:
 - pytest.
 - Frontend unit tests.
 - API integration tests.
-- Playwright end-to-end tests.
+- Playwright end-to-end tests (required — covers auth, navigation, dashboard, projects, API verification).
 - ESLint.
-- Python linting and formatting.
+- Python linting and formatting (ruff).
 - Production container builds.
+- Frontend chunk splitting for production builds (`react-vendor`, `query-vendor`, `chart-vendor`, `form-vendor`).
+- The application must not depend on any LLM model or AI service.
 
 Keep business calculations in a dedicated, independently tested domain layer.
 
@@ -819,7 +802,7 @@ Keep business calculations in a dedicated, independently tested domain layer.
 
 Execute in this order:
 
-1. Inspect the approved prototype and repository.
+1. Inspect the repository and design assets.
 2. Document current gaps and architecture.
 3. Define database entities and relationships.
 4. Define calculation rules and tests.
@@ -832,7 +815,7 @@ Execute in this order:
 11. Implement client investment, benefit, and ROI.
 12. Connect the approved frontend to the production APIs.
 13. Implement reports.
-14. Implement API-key and webhook management.
+14. Implement API-key management.
 15. Add audit logging.
 16. Add error and data-completeness states.
 17. Add automated tests.
@@ -846,15 +829,18 @@ Execute in this order:
 
 Use these resources as the sources of truth:
 
-### 1. Approved interactive prototype:
+### 1. Approved design assets (committed in `/assets/`):
 
-https://consulting-roi-6r-0811.pmpai134.chatgpt.site
+- `精銘數據Logo.png` — PrecisionData logo for sidebar branding.
+- `Consutling-dashborad.jpg` — Dashboard layout reference image.
+
+No external prototype URL is used. The committed assets are the sole design source of truth.
 
 ### 2. Existing project repository and current source files.
 
 ### 3. PrecisionData logo supplied by the user:
 
-`精銘數據Logo.png`
+`assets/精銘數據Logo.png` (copied to `frontend/public/branding/` during scaffold)
 
 ### 4. Approved visual direction:
 
@@ -885,14 +871,13 @@ https://consulting-roi-6r-0811.pmpai134.chatgpt.site
 
 ### 7. Missing deployment-specific resources that may be requested only when required:
 
-- Production domain.
 - Production cloud account.
-- Email provider.
-- OAuth credentials.
 - Real API secrets.
 - Production database credentials.
 - Final data-retention policy.
 - Final backup destination.
+
+No production domain name is required — the application is accessed via port 8898. No OAuth credentials or email provider is needed (password-only auth).
 
 ## RESTRAIN
 
@@ -907,7 +892,7 @@ https://consulting-roi-6r-0811.pmpai134.chatgpt.site
 - Do not duplicate financial formulas across frontend and backend.
 - Do not confuse client ROI with consultant profitability.
 - Do not count estimated benefits in official ROI.
-- Do not invent missing client investments, revenue, benefits, or exchange rates.
+- Do not invent missing client investments, revenue, or benefits.
 - Do not display missing values as zero.
 - Do not use floating-point numbers for money.
 - Do not recalculate historical records using current rates.
@@ -915,7 +900,7 @@ https://consulting-roi-6r-0811.pmpai134.chatgpt.site
 - Do not cascade-delete related financial or time records silently.
 - Do not rely on hidden buttons for authorization.
 - Do not expose data across organizations.
-- Do not store plaintext passwords, API keys, or webhook secrets.
+- Do not store plaintext passwords or API keys.
 - Do not commit actual secrets or credentials.
 - Do not return stack traces or SQL errors through APIs.
 - Do not log sensitive authentication data.
@@ -925,41 +910,52 @@ https://consulting-roi-6r-0811.pmpai134.chatgpt.site
 - Do not make destructive production changes without backup and rollback instructions.
 - Do not claim a feature is complete unless it has been tested.
 - Do not report deployment success without observable confirmation.
-- Do not stop for noncritical design questions; follow the approved prototype.
+- Do not implement webhooks — they have been explicitly removed from scope.
+- Do not implement multi-currency or exchange-rate features — the system uses a single org-level currency.
+- Do not implement OAuth or email-based authentication — password-only auth.
+- Do not depend on any LLM model or AI service.
+- Do not use Windows-specific paths (backslashes), PowerShell commands, or platform-specific APIs. All file operations must use `pathlib.Path` and be cross-platform (Windows + Mac + Linux).
+- Do not use non-ASCII filenames in committed assets — use ASCII names (e.g. `precisiondata-logo.png`, not `精銘數據Logo.png`).
+- Do not use emoji as icons in the UI — use inline SVG (16px, stroke-width 1.5, Lucide-style).
+- Do not use gradient backgrounds, glassmorphism, border-radius > 8px, or centered hero layouts.
+- Do not hardcode CSS values per page — use design tokens (CSS variables) defined in a global stylesheet.
 - Ask for user input only when real credentials, external service authorization, irreversible external actions, or a material business-policy decision is required.
 
 ## RESULT
 
 ### Deliver a production-ready application containing:
 
-- Responsive approved frontend.
-- PrecisionData branding.
-- Fixed left navigation.
-- Dashboard with Gantt chart.
-- Approved KPI arrangement.
+- Responsive approved frontend with engineering-grade design system (Linear/Vercel/Stripe-style).
+- PrecisionData branding (ASCII logo filename: `precisiondata-logo.png`).
+- Fixed left navigation with SVG icons (no emoji).
+- Dark/light theme toggle persisted to localStorage.
+- Dashboard with enhanced Gantt chart (dates on top axis, per-phase costs, expandable detail rows).
+- Approved KPI arrangement (ROI circular gauge, completion ring, cost, verified benefits).
 - Grouped investment-versus-benefit bar chart.
 - Client CRUD.
-- Project CRUD, archive, restore, and details.
-- Phase and milestone management.
+- Project CRUD with total_quote, final_goal, notes, and inline phase creation.
+- Phase management with KPI definition, milestone goal, estimated vs actual expense.
+- File upload support (contracts, agreements, attachments) with download and delete.
+- Milestone management.
 - Timer and manual time entries.
 - Searchable detailed work records.
-- Tool and direct expenses.
+- Tool and direct expenses (merged across all users).
 - Consultant revenue records.
 - Client investments and benefits.
-- Client ROI calculations.
-- Reports and CSV exports.
-- REST API for external CRUD.
+- Client ROI calculations (project-lifetime, null when incomplete).
+- Reports and CSV exports (UTF-8 BOM, Chinese-safe).
+- REST API for external CRUD (47 endpoints).
 - JWT and API-key authentication.
-- Role and visibility enforcement.
-- Webhooks.
+- Role rates management in Settings (owner/assistant/consultant/viewer).
+- Role and visibility enforcement (4 roles including assistant with full access).
 - Audit history.
 - Data-completeness handling.
-- OpenAPI documentation.
-- Database migrations.
-- Development seed data.
-- Automated tests.
-- Docker-based local setup.
-- Production build.
+- OpenAPI documentation (interactive at /docs).
+- Database migrations (3 reversible migrations).
+- Development seed data (env-gated).
+- Automated tests (29 pytest domain tests + 26 Playwright E2E tests).
+- Docker-based local setup (cross-platform: Windows + Mac + Linux).
+- Production build with chunk splitting.
 - Complete documentation.
 
 ### Required documentation:
@@ -976,7 +972,6 @@ https://consulting-roi-6r-0811.pmpai134.chatgpt.site
 - Roles and permissions.
 - API-key setup.
 - API examples.
-- Webhook signing and retry behavior.
 - ROI formulas.
 - Consultant financial formulas.
 - Data-completeness rules.
@@ -1000,7 +995,6 @@ https://consulting-roi-6r-0811.pmpai134.chatgpt.site
 - Work records are searchable.
 - Private work records are not exposed to viewers or client exports.
 - Historical rate snapshots remain unchanged after rate updates.
-- Expenses without required exchange rates are excluded from official totals.
 - Verified benefits affect official ROI.
 - Estimated benefits do not affect official ROI.
 - Missing investment returns `roi: null`.
@@ -1008,8 +1002,6 @@ https://consulting-roi-6r-0811.pmpai134.chatgpt.site
 - Restored records return to the appropriate summaries.
 - External API CRUD updates appear in the web interface.
 - API operations respect scopes and organization boundaries.
-- Webhook signatures can be verified.
-- Duplicate webhook deliveries can be handled safely.
 - Unauthorized users receive correct 401 or 403 responses.
 - Invalid resources return 404.
 - Validation failures return structured 422 or appropriate 4xx responses.
@@ -1040,11 +1032,12 @@ https://consulting-roi-6r-0811.pmpai134.chatgpt.site
 
 ## REFERENCE
 
-Follow the approved prototype’s interface hierarchy and visual language.
+Follow the committed design assets for interface hierarchy and visual language.
 
 Primary interface reference:
 
-https://consulting-roi-6r-0811.pmpai134.chatgpt.site
+- `assets/Consutling-dashborad.jpg` — Dashboard layout reference.
+- `assets/精銘數據Logo.png` — Brand logo.
 
 Visual tokens:
 
